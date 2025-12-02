@@ -17,6 +17,8 @@ import {
   ChevronRight,
   Activity,
   Award,
+  DollarSign,
+  CreditCard,
 } from 'lucide-react';
 import {
   AreaChart,
@@ -29,6 +31,101 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
+
+// ============================================
+// CONSTANTES FINANCIERAS
+// ============================================
+const TOKEN_TO_USD = 0.05; // 1 Token = $0.05 USD
+const STUDIO_CUT_LOW = 0.40; // 40% studio si grupo < 10k tokens
+const STUDIO_CUT_HIGH = 0.35; // 35% studio si grupo >= 10k tokens
+const TALENT_CUT_LOW = 1 - STUDIO_CUT_LOW; // 60% talento
+const TALENT_CUT_HIGH = 1 - STUDIO_CUT_HIGH; // 65% talento
+
+// ============================================
+// FUNCIONES DE CÁLCULO FINANCIERO
+// ============================================
+
+/**
+ * Calcula si el grupo está en rango bajo o alto
+ */
+const getStudioCutPercentage = (groupTokens) => {
+  return groupTokens >= 10000 ? STUDIO_CUT_HIGH : STUDIO_CUT_LOW;
+};
+
+/**
+ * Calcula tokens netos para cada miembro (antes de descuento)
+ */
+const calculateTokensPerMember = (totalTokens, membersCount) => {
+  if (membersCount === 0) return 0;
+  return totalTokens / membersCount;
+};
+
+/**
+ * Calcula tokens netos después de descuento del estudio
+ */
+const calculateNetTokensPerMember = (tokensPerMember, groupTokens) => {
+  const studioPercentage = getStudioCutPercentage(groupTokens);
+  return tokensPerMember * (1 - studioPercentage);
+};
+
+/**
+ * Convierte tokens a dólares
+ */
+const convertTokensToDollars = (tokens) => {
+  return tokens * TOKEN_TO_USD;
+};
+
+/**
+ * Convierte dólares a pesos usando TRM
+ */
+const convertDollarsToPesos = (dollars, trm) => {
+  return dollars * (trm - 300);
+};
+
+/**
+ * Calcula la ganancia bruta en USD del grupo
+ */
+const calculateGrossRevenueUSD = (groupTokens) => {
+  return groupTokens * TOKEN_TO_USD;
+};
+
+/**
+ * Calcula la ganancia neta del estudio en COP
+ */
+const calculateStudioEarningsCOP = (groupTokens, trm) => {
+  const studioPercentage = getStudioCutPercentage(groupTokens);
+  const studioTokens = groupTokens * studioPercentage;
+  const studioUSD = studioTokens * TOKEN_TO_USD;
+  return studioUSD * (trm - 300);
+};
+
+/**
+ * Calcula la nómina total a pagar (talento) en COP
+ */
+const calculateTalentPayrollCOP = (groupTokens, trm) => {
+  const talentPercentage = 1 - getStudioCutPercentage(groupTokens);
+  const talentTokens = groupTokens * talentPercentage;
+  const talentUSD = talentTokens * TOKEN_TO_USD;
+  return talentUSD * (trm - 300);
+};
+
+/**
+ * Formatea números como moneda
+ */
+const formatCurrency = (value, currency = 'COP') => {
+  if (currency === 'USD') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2,
+    }).format(value);
+  }
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    minimumFractionDigits: 0,
+  }).format(value);
+};
 
 function App() {
   // Auth state
@@ -60,13 +157,13 @@ function App() {
   // Chart data - 7 días
   const chartData = useMemo(
     () => [
-      { name: 'Lun', tokens: 2400, revenue: 1200, models: 12 },
-      { name: 'Mar', tokens: 3000, revenue: 1500, models: 14 },
-      { name: 'Mié', tokens: 2000, revenue: 1000, models: 10 },
-      { name: 'Jue', tokens: 2780, revenue: 1390, models: 13 },
-      { name: 'Vie', tokens: 1890, revenue: 945, models: 9 },
-      { name: 'Sab', tokens: 2390, revenue: 1195, models: 11 },
-      { name: 'Dom', tokens: 3490, revenue: 1745, models: 16 },
+      { name: 'Lun', tokens: 2400, revenue: 2400 * TOKEN_TO_USD, studioCut: 2400 * 0.40 * TOKEN_TO_USD },
+      { name: 'Mar', tokens: 3000, revenue: 3000 * TOKEN_TO_USD, studioCut: 3000 * 0.40 * TOKEN_TO_USD },
+      { name: 'Mié', tokens: 2000, revenue: 2000 * TOKEN_TO_USD, studioCut: 2000 * 0.40 * TOKEN_TO_USD },
+      { name: 'Jue', tokens: 2780, revenue: 2780 * TOKEN_TO_USD, studioCut: 2780 * 0.40 * TOKEN_TO_USD },
+      { name: 'Vie', tokens: 1890, revenue: 1890 * TOKEN_TO_USD, studioCut: 1890 * 0.40 * TOKEN_TO_USD },
+      { name: 'Sab', tokens: 2390, revenue: 2390 * TOKEN_TO_USD, studioCut: 2390 * 0.40 * TOKEN_TO_USD },
+      { name: 'Dom', tokens: 3490, revenue: 3490 * TOKEN_TO_USD, studioCut: 3490 * 0.40 * TOKEN_TO_USD },
     ],
     []
   );
@@ -126,21 +223,39 @@ function App() {
     return groups.filter((g) => (g.models || []).includes(user?.email || ''));
   }, [groups, userRole, user]);
 
-  // Calculate KPIs
-  const kpis = useMemo(() => {
+  // ============================================
+  // CÁLCULOS DE FINANZAS - KPIs
+  // ============================================
+  const financialMetrics = useMemo(() => {
     const totalTokens = groups.reduce((sum, g) => sum + (g.tokens || 0), 0);
+    
+    // Facturación Bruta en USD
+    const grossRevenueUSD = totalTokens * TOKEN_TO_USD;
+    
+    // Ganancia Neta del Studio en COP
+    const studioEarningsCOP = groups.reduce((sum, group) => {
+      return sum + calculateStudioEarningsCOP(group.tokens || 0, trm);
+    }, 0);
+    
+    // Nómina Total a Pagar en COP
+    const talentPayrollCOP = groups.reduce((sum, group) => {
+      return sum + calculateTalentPayrollCOP(group.tokens || 0, trm);
+    }, 0);
+
     const totalModerators = new Set(groups.map((g) => g.moderator).filter(Boolean)).size;
     const totalModels = new Set(groups.flatMap((g) => g.models || [])).size;
 
     return {
       totalGroups: groups.length,
       totalTokens,
+      grossRevenueUSD,
+      studioEarningsCOP,
+      talentPayrollCOP,
       totalModerators,
       totalModels,
       visibleGroups: groupsToShow.length,
-      avgTokensPerGroup: groups.length > 0 ? Math.round(totalTokens / groups.length) : 0,
     };
-  }, [groups, groupsToShow]);
+  }, [groups, trm, groupsToShow]);
 
   // Handlers
   const handleCreateGroup = useCallback(async () => {
@@ -253,6 +368,11 @@ function App() {
   // Render group card
   const renderGroupCard = (group) => {
     const platformColor = renderPlatformBadge(group.platform);
+    const groupTokens = group.tokens || 0;
+    const studioPercentage = getStudioCutPercentage(groupTokens);
+    const studioEarnings = calculateStudioEarningsCOP(groupTokens, trm);
+    const talentPayroll = calculateTalentPayrollCOP(groupTokens, trm);
+
     return (
       <div
         key={group.id}
@@ -309,6 +429,20 @@ function App() {
               )}
             </div>
           </div>
+
+          {/* Financial Info */}
+          <div className="pt-3 border-t border-gray-200 space-y-2">
+            <div className="text-xs grid grid-cols-2 gap-2">
+              <div className="bg-green-50 p-2 rounded">
+                <span className="text-gray-600">Bruto (USD):</span>
+                <p className="font-bold text-green-700">{formatCurrency(groupTokens * TOKEN_TO_USD, 'USD')}</p>
+              </div>
+              <div className="bg-blue-50 p-2 rounded">
+                <span className="text-gray-600">Studio ({Math.round(studioPercentage * 100)}%):</span>
+                <p className="font-bold text-blue-700">{formatCurrency(studioEarnings, 'COP')}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {editingGroupId === group.id ? (
@@ -335,8 +469,8 @@ function App() {
           </div>
         ) : (
           <div className="pt-4 border-t border-gray-200 flex items-center justify-between">
-            <span className="text-sm text-gray-600">Tokens:</span>
-            <span className="text-2xl font-bold text-blue-600">{group.tokens}</span>
+            <span className="text-sm text-gray-600">Tokens Totales:</span>
+            <span className="text-2xl font-bold text-blue-600">{groupTokens.toLocaleString()}</span>
           </div>
         )}
       </div>
@@ -397,6 +531,20 @@ function App() {
               </button>
             </div>
           </div>
+
+          {/* TRM Input - Admin Only */}
+          {userRole === 'admin' && (
+            <div className="mt-4 flex items-center gap-4">
+              <label className="text-sm font-medium text-gray-700">TRM (COP/USD):</label>
+              <input
+                type="number"
+                value={trm}
+                onChange={(e) => setTrm(Math.max(0, parseFloat(e.target.value) || 0))}
+                className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="0"
+              />
+            </div>
+          )}
         </div>
       </header>
 
@@ -439,7 +587,67 @@ function App() {
 
         {/* Main content */}
         <main className="flex-1 p-4 sm:p-8">
-          {/* KPI Cards - Bento Grid */}
+          {/* ADMIN FINANCIAL DASHBOARD */}
+          {userRole === 'admin' && (
+            <>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 mb-6">Finanzas del Estudio</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Facturación Bruta USD */}
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl border-2 border-green-300 p-8 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <DollarSign className="w-12 h-12 text-green-600" />
+                      <span className="text-xs px-3 py-1 bg-green-200 text-green-800 rounded-full font-bold">
+                        Ingreso
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-sm mb-2 font-semibold">Facturación Bruta</p>
+                    <p className="text-4xl font-bold text-green-700">
+                      {formatCurrency(financialMetrics.grossRevenueUSD, 'USD')}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-2">
+                      {financialMetrics.totalTokens.toLocaleString()} tokens × ${TOKEN_TO_USD}
+                    </p>
+                  </div>
+
+                  {/* Ganancia Neta Studio COP */}
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl border-2 border-blue-300 p-8 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <CreditCard className="w-12 h-12 text-blue-600" />
+                      <span className="text-xs px-3 py-1 bg-blue-200 text-blue-800 rounded-full font-bold">
+                        Ganancia
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-sm mb-2 font-semibold">Ganancia Neta Studio</p>
+                    <p className="text-4xl font-bold text-blue-700">
+                      {formatCurrency(financialMetrics.studioEarningsCOP, 'COP')}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-2">Tu dinero neto en pesos</p>
+                  </div>
+
+                  {/* Nómina a Pagar COP */}
+                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl border-2 border-orange-300 p-8 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <Users className="w-12 h-12 text-orange-600" />
+                      <span className="text-xs px-3 py-1 bg-orange-200 text-orange-800 rounded-full font-bold">
+                        Gasto
+                      </span>
+                    </div>
+                    <p className="text-gray-700 text-sm mb-2 font-semibold">Nómina a Pagar</p>
+                    <p className="text-4xl font-bold text-orange-700">
+                      {formatCurrency(financialMetrics.talentPayrollCOP, 'COP')}
+                    </p>
+                    <p className="text-xs text-gray-600 mt-2">Pago a modelos y moderadores</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Línea divisoria */}
+              <hr className="my-8 border-gray-300" />
+            </>
+          )}
+
+          {/* KPI Cards Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             {/* Total Grupos */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm hover:shadow-md transition-all hover:border-blue-300">
@@ -450,7 +658,7 @@ function App() {
                 </span>
               </div>
               <p className="text-gray-600 text-sm mb-1">Total Grupos</p>
-              <p className="text-4xl font-bold text-gray-900">{kpis.totalGroups}</p>
+              <p className="text-4xl font-bold text-gray-900">{financialMetrics.totalGroups}</p>
               <p className="text-xs text-gray-500 mt-2">Grupos activos en el sistema</p>
             </div>
 
@@ -463,8 +671,8 @@ function App() {
                 </span>
               </div>
               <p className="text-gray-600 text-sm mb-1">Tokens Totales</p>
-              <p className="text-4xl font-bold text-gray-900">{kpis.totalTokens.toLocaleString()}</p>
-              <p className="text-xs text-gray-500 mt-2">Ingresos acumulados</p>
+              <p className="text-4xl font-bold text-gray-900">{financialMetrics.totalTokens.toLocaleString()}</p>
+              <p className="text-xs text-gray-500 mt-2">Generados en todas las plataformas</p>
             </div>
 
             {/* Moderadores */}
@@ -472,11 +680,11 @@ function App() {
               <div className="flex items-center justify-between mb-4">
                 <Users className="w-10 h-10 text-purple-100" />
                 <span className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">
-                  {kpis.totalModerators}
+                  {financialMetrics.totalModerators}
                 </span>
               </div>
               <p className="text-gray-600 text-sm mb-1">Moderadores</p>
-              <p className="text-4xl font-bold text-gray-900">{kpis.totalModerators}</p>
+              <p className="text-4xl font-bold text-gray-900">{financialMetrics.totalModerators}</p>
               <p className="text-xs text-gray-500 mt-2">Activos en la plataforma</p>
             </div>
 
@@ -485,11 +693,11 @@ function App() {
               <div className="flex items-center justify-between mb-4">
                 <Award className="w-10 h-10 text-orange-100" />
                 <span className="text-xs px-2 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">
-                  {kpis.totalModels}
+                  {financialMetrics.totalModels}
                 </span>
               </div>
               <p className="text-gray-600 text-sm mb-1">Modelos</p>
-              <p className="text-4xl font-bold text-gray-900">{kpis.totalModels}</p>
+              <p className="text-4xl font-bold text-gray-900">{financialMetrics.totalModels}</p>
               <p className="text-xs text-gray-500 mt-2">Registradas en el sistema</p>
             </div>
           </div>
@@ -498,7 +706,7 @@ function App() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
             {/* Area Chart */}
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900 mb-6">Tokens por Día (7 Días)</h2>
+              <h2 className="text-lg font-semibold text-gray-900 mb-6">Ingresos Diarios (7 Días)</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <AreaChart data={chartData}>
                   <defs>
@@ -517,10 +725,11 @@ function App() {
                       borderRadius: '0.75rem',
                       boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
                     }}
+                    formatter={(value) => formatCurrency(value, 'USD')}
                   />
                   <Area
                     type="monotone"
-                    dataKey="tokens"
+                    dataKey="revenue"
                     stroke="#3b82f6"
                     fillOpacity={1}
                     fill="url(#colorTokens)"
@@ -529,7 +738,7 @@ function App() {
               </ResponsiveContainer>
             </div>
 
-            {/* Bar Chart */}
+            {/* Platform Distribution */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900 mb-6">Top Plataformas</h2>
               <div className="space-y-4">
