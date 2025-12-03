@@ -20,11 +20,16 @@ export default function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('🔄 Setting up auth listener...');
     const unsub = onAuthStateChanged(auth, (u) => {
+      console.log('🔔 Auth state changed:', u ? `User: ${u.email}` : 'No user');
       setUser(u || null);
       setLoading(false);
     });
-    return () => unsub();
+    return () => {
+      console.log('🧹 Cleaning up auth listener');
+      unsub();
+    };
   }, []);
 
   const handleLogout = async () => {

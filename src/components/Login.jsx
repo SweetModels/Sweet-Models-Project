@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';
 
 function Login() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSignup, setIsSignup] = useState(false);
@@ -14,23 +16,33 @@ function Login() {
     setError('');
     setLoading(true);
 
+    console.log('🔐 Attempting login with:', { email, isSignup });
+
     try {
+      let userCredential;
       if (isSignup) {
-        await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        console.log('✅ Signup successful:', userCredential.user.uid);
       } else {
-        await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log('✅ Login successful:', userCredential.user.uid);
       }
-      // Auth state change will be handled by onAuthStateChanged in App.jsx
+      console.log('🚀 Navigating to home...');
+      // Small delay to ensure auth state propagates
+      setTimeout(() => {
+        navigate('/', { replace: true });
+      }, 100);
     } catch (err) {
+      console.error('❌ Auth error:', err.code, err.message);
       const errorMessages = {
         'auth/email-already-in-use': 'El correo ya está registrado',
         'auth/weak-password': 'La contraseña debe tener al menos 6 caracteres',
         'auth/user-not-found': 'El correo no está registrado',
         'auth/wrong-password': 'Contraseña incorrecta',
         'auth/invalid-email': 'Correo inválido',
+        'auth/invalid-credential': 'Credenciales inválidas',
       };
       setError(errorMessages[err.code] || err.message);
-    } finally {
       setLoading(false);
     }
   };
