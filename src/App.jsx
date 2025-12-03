@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged } from 'firebase/auth';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import Layout from './components/Layout';
 import Home from './pages/Home';
@@ -15,6 +15,7 @@ function PrivateRoute({ user, children }) {
 }
 
 export default function App() {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -25,6 +26,16 @@ export default function App() {
     });
     return () => unsub();
   }, []);
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      navigate('/login');
+    } catch (err) {
+      console.error('Error logging out:', err);
+    }
+  };
 
   if (loading) {
     return (
@@ -42,7 +53,7 @@ export default function App() {
         path="/"
         element={
           <PrivateRoute user={user}>
-            <Layout>
+            <Layout onLogout={handleLogout} user={user}>
               <Home />
             </Layout>
           </PrivateRoute>
@@ -53,7 +64,7 @@ export default function App() {
         path="/reportes"
         element={
           <PrivateRoute user={user}>
-            <Layout>
+            <Layout onLogout={handleLogout} user={user}>
               <Reports />
             </Layout>
           </PrivateRoute>
@@ -64,7 +75,7 @@ export default function App() {
         path="/usuarios"
         element={
           <PrivateRoute user={user}>
-            <Layout>
+            <Layout onLogout={handleLogout} user={user}>
               <Users />
             </Layout>
           </PrivateRoute>
@@ -75,7 +86,7 @@ export default function App() {
         path="/configuracion"
         element={
           <PrivateRoute user={user}>
-            <Layout>
+            <Layout onLogout={handleLogout} user={user}>
               <Settings />
             </Layout>
           </PrivateRoute>
